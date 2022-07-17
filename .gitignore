@@ -1,0 +1,17 @@
+.idea/
+.DS_store/
+*.pyc
+*.DS_Store
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Jupyter Notebook
+.ipynb_checkpoints
+/src/results/
+!/src/results/.gitkeep
