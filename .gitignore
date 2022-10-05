@@ -14,4 +14,4 @@ __pycache__/
 # Jupyter Notebook
 .ipynb_checkpoints
 /src/results/
-!/src/results/.gitkeep
+!src/results/data/imagenet/efficientnet_b7/.gitkeep

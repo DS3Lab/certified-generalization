@@ -30,7 +30,7 @@ parser.add_argument('--loss', default='ce', type=str, choices=['ce', 'jsd'])
 parser.add_argument('--outdir', default='./temp', type=str, help='folder to save model and training log)')
 parser.add_argument('--id', type=str, default=None, help='folder to save model and training log)')
 parser.add_argument('--workers', default=8, type=int, metavar='N', help='number of data loading workers (default: 4)')
-parser.add_argument('--epochs', default=90, type=int, metavar='N', help='number of total epochs to run')
+parser.add_argument('--epochs', default=2, type=int, metavar='N', help='number of total epochs to run')
 parser.add_argument('--batch', default=256, type=int, metavar='N', help='batchsize (default: 256)')
 parser.add_argument('--lr', '--learning-rate', default=0.1, type=float, help='initial learning rate', dest='lr')
 parser.add_argument('--lr_step_size', type=int, default=30, help='How often to decrease learning by gamma.')
@@ -105,15 +105,13 @@ def main():
 
     for epoch in range(args.epochs):
         before = time.time()
-        train_total_loss, train_mean_loss, train_var_loss, train_acc = train(
-            train_loader, model, criterion, optimizer, epoch)
-        test_total_loss, test_mean_loss, test_var_loss, test_acc = test(test_loader, model, criterion)
+        train_total_loss, train_acc = train(train_loader, model, criterion, optimizer, epoch)
+        test_total_loss, test_acc = test(test_loader, model, criterion)
         after = time.time()
 
-        log(logfilename, "{}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}".format(
+        log(logfilename, "{}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}\t{:.3}".format(
             epoch, str(datetime.timedelta(seconds=(after - before))),
-            scheduler.get_last_lr()[0], train_total_loss, train_mean_loss, train_var_loss, train_acc, test_total_loss,
-            test_mean_loss, test_var_loss, test_acc))
+            scheduler.get_last_lr()[0], train_total_loss, train_acc, test_total_loss, test_acc))
 
         torch.save({
             'epoch': epoch + 1,
@@ -143,8 +141,6 @@ def train(loader: DataLoader, model: torch.nn.Module, criterion, optimizer: Opti
     batch_time = AverageMeter()
     data_time = AverageMeter()
     total_losses = AverageMeter()
-    losses_mean = AverageMeter()
-    losses_var = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
     end = time.time()
@@ -164,17 +160,11 @@ def train(loader: DataLoader, model: torch.nn.Module, criterion, optimizer: Opti
         outputs = model(inputs)
 
         # compute loss
-        if args.var_reg > 0:
-            total_loss, mean_loss, sd_loss = criterion(outputs, targets)
-        else:
-            total_loss = criterion(outputs, targets)
-            mean_loss = sd_loss = torch.tensor(np.nan)
+        total_loss = criterion(outputs, targets)
 
         # measure accuracy and record loss
         acc1, acc5 = accuracy(outputs, targets, topk=(1, 5) if NUM_CLASSES >= 5 else (1, 2))
         total_losses.update(total_loss.item(), inputs.size(0))
-        losses_mean.update(mean_loss.item(), inputs.size(0))
-        losses_var.update(sd_loss.item(), inputs.size(0))
         top1.update(acc1.item(), inputs.size(0))
         top5.update(acc5.item(), inputs.size(0))
 
@@ -195,23 +185,17 @@ def train(loader: DataLoader, model: torch.nn.Module, criterion, optimizer: Opti
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                   'Total Loss {total_loss.val:.4f} ({total_loss.avg:.4f})\t'
-                  'Mean Loss {mean_loss.val:.4f} ({mean_loss.avg:.4f})\t'
-                  'Loss Var {var_loss.val:.4f} ({var_loss.avg:.4f})\t'
-                  'Acc@id-id-1 {top1.val:.3f} ({top1.avg:.3f})\t'
+                  'Acc@1 {top1.val:.3f} ({top1.avg:.3f})\t'
                   'Acc@5 {top5.val:.3f} ({top5.avg:.3f})'.format(epoch, i, len(loader), batch_time=batch_time,
                                                                  data_time=data_time, total_loss=total_losses,
-                                                                 mean_loss=losses_mean, var_loss=losses_var,
                                                                  top1=top1, top5=top5))
-
-    return total_losses.avg, losses_mean.avg, losses_var.avg, top1.avg
+    return total_losses.avg, top1.avg
 
 
 def test(loader: DataLoader, model: torch.nn.Module, criterion):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     total_losses = AverageMeter()
-    losses_mean = AverageMeter()
-    losses_var = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
     end = time.time()
@@ -232,17 +216,11 @@ def test(loader: DataLoader, model: torch.nn.Module, criterion):
             outputs = model(inputs)
 
             # compute loss
-            if args.var_reg > 0:
-                total_loss, mean_loss, sd_loss = criterion(outputs, targets)
-            else:
-                total_loss = criterion(outputs, targets)
-                mean_loss = sd_loss = torch.tensor(np.nan)
+            total_loss = criterion(outputs, targets)
 
             # measure accuracy and record loss
             acc1, acc5 = accuracy(outputs, targets, topk=(1, 5) if NUM_CLASSES >= 5 else (1, 2))
             total_losses.update(total_loss.item(), inputs.size(0))
-            losses_mean.update(mean_loss.item(), inputs.size(0))
-            losses_var.update(sd_loss.item(), inputs.size(0))
             top1.update(acc1.item(), inputs.size(0))
             top5.update(acc5.item(), inputs.size(0))
 
@@ -255,15 +233,12 @@ def test(loader: DataLoader, model: torch.nn.Module, criterion):
                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                       'Loss {total_loss.val:.4f} ({total_loss.avg:.4f})\t'
-                      'Mean Loss {mean_loss.val:.4f} ({mean_loss.avg:.4f})\t'
-                      'Loss Var {var_loss.val:.4f} ({var_loss.avg:.4f})\t'
-                      'Acc@id-id-1 {top1.val:.3f} ({top1.avg:.3f})\t'
+                      'Acc@1 {top1.val:.3f} ({top1.avg:.3f})\t'
                       'Acc@5 {top5.val:.3f} ({top5.avg:.3f})'.format(i, len(loader), batch_time=batch_time,
                                                                      data_time=data_time, total_loss=total_losses,
-                                                                     mean_loss=losses_mean, var_loss=losses_var,
                                                                      top1=top1, top5=top5))
 
-        return total_losses.avg, losses_mean.avg, losses_var.avg, top1.avg
+        return total_losses.avg, top1.avg
 
 
 def compute_logits(model, dataloader, num_classes):
